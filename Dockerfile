@@ -34,10 +34,9 @@ RUN python3 -m pip install --no-cache-dir \
       "opencv-python-headless>=4.8" \
       "Pillow>=9.5" \
       "boto3>=1.21" \
-      "hf-transfer>=0.1.6"
-
-# Torchvision (matching torch 2.3.1 / CUDA 12.1)
-RUN python3 -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 torchvision==0.18.1
+      "hf-transfer>=0.1.6" \
+      # Torchvision (matching torch 2.3.1 / CUDA 12.1)
+      --index-url https://download.pytorch.org/whl/cu121 torchvision==0.18.1
 
 # Install DA3 from source
 RUN python3 -m pip install --no-cache-dir -e /app
