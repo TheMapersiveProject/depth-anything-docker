@@ -24,7 +24,8 @@ COPY da3_batch.py entrypoint_da3.py /app/
 COPY stitch_depth_equirect_parallel.py /app/
 
 # Install dependencies
-RUN python3 -m pip install --no-cache-dir \
+RUN python3 -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 torchvision==0.18.1 && \
+    python3 -m pip install --no-cache-dir \
       "numpy>=1.26,<2" \
       "transformers>=4.40" \
       "timm>=1.0" \
@@ -34,9 +35,7 @@ RUN python3 -m pip install --no-cache-dir \
       "opencv-python-headless>=4.8" \
       "Pillow>=9.5" \
       "boto3>=1.21" \
-      "hf-transfer>=0.1.6" \
-      # Torchvision (matching torch 2.3.1 / CUDA 12.1)
-      --index-url https://download.pytorch.org/whl/cu121 torchvision==0.18.1
+      "hf-transfer>=0.1.6"
 
 # Install DA3 from source
 RUN python3 -m pip install --no-cache-dir -e /app
