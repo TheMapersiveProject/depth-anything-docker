@@ -24,7 +24,8 @@ COPY da3_batch.py entrypoint_da3.py /app/
 COPY stitch_depth_equirect_parallel.py /app/
 
 # Install dependencies
-RUN python3 -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 torchvision==0.18.1 && \
+# Note: Installing torchvision separately to ensure it matches the torch version in the base image
+RUN python3 -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu121 torchvision==0.18.1+cu121 && \
     python3 -m pip install --no-cache-dir \
       "numpy>=1.26,<2" \
       "transformers>=4.40" \
