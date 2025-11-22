@@ -1,0 +1,41 @@
+# Exclude unnecessary files from Docker build context
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.log
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (don't need in image)
+!requirements_da3.txt
+
+# Test files
+tests/
+*.test.py
+compare_depths.py
+
+# Terraform
+*.tf
+.terraform/
+terraform.tfstate*
+
+# Misc
+assets/
+notebooks/
+docs/
+.github/
+

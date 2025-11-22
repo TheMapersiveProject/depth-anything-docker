@@ -235,3 +235,9 @@ If you find Depth Anything 3 useful in your research or projects, please cite ou
   year={2025}
 }
 ```
+
+---
+
+## 🔬 Custom Integration: DepthPro Replacement
+
+**For testing DA3 as a drop-in replacement for Apple DepthPro in AWS Batch SfM pipelines, see [DA3_DEPTHPRO_TEST.md](DA3_DEPTHPRO_TEST.md).**
