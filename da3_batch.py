@@ -34,7 +34,8 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
 
     try:
         # Run inference
-        prediction = model.inference(image=[str(p) for p in batch_paths], process_res=504)
+        with torch.no_grad():
+            prediction = model.inference(image=[str(p) for p in batch_paths], process_res=504)
         
         # Save results for each image
         for idx, (path, depth) in enumerate(zip(batch_paths, prediction.depth), start=1):
