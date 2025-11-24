@@ -90,7 +90,8 @@ def main():
     print(f"[INFO] Using EFS-mounted data at {undist_images}")
 
     # AWS Batch array filtering
-    array_idx = int(os.getenv("AWS_BATCH_JOB_ARRAY_INDEX", "0"))
+    # First check if USER provided override env var
+    array_idx = int(os.getenv("FORCE_ARRAY_INDEX", os.getenv("AWS_BATCH_JOB_ARRAY_INDEX", "0")))
     print(f"[INFO] AWS Batch array mode detected → index={array_idx}")
 
     # Find all images
