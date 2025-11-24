@@ -169,10 +169,11 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
     # Try to load poses
     extrinsics, intrinsics = _load_pose_matrices(batch_paths, rot_trans_dir)
     if extrinsics is not None:
-        extrinsics = torch.from_numpy(extrinsics).float()
-        intrinsics = torch.from_numpy(intrinsics).float()
+        # Keep as numpy arrays - DA3 will convert to tensors internally
+        # extrinsics = torch.from_numpy(extrinsics).float()
+        # intrinsics = torch.from_numpy(intrinsics).float()
         # DEBUG: Check shapes
-        # print(f"[DA3][DEBUG] Extrinsics shape: {extrinsics.shape}, Intrinsics shape: {intrinsics.shape}")
+        print(f"[DA3][DEBUG] Extrinsics shape: {extrinsics.shape}, Intrinsics shape: {intrinsics.shape}")
     else:
         print("[DA3][WARN] Running without pose info (could not load matrices).")
         # pass
