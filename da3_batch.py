@@ -254,6 +254,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
 
 
 def main():
+    print("[DA3] VERSION: v2 (Numpy Poses Fix)")
     args = parse_arguments()
     t_total_start = time.perf_counter()
 
