@@ -247,8 +247,10 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
             errors += len(batch_paths)
             print(f"[DA3][ERROR] Batch starting {batch_paths[0].name}: {re}")
     except Exception as e:
+        import traceback
         errors += len(batch_paths)
         print(f"[DA3][ERROR] Batch starting {batch_paths[0].name}: {e}")
+        print("[DA3][TRACE]", traceback.format_exc())
 
     return completed, errors, per_image_times
 
