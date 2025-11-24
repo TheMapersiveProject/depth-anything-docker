@@ -17,6 +17,140 @@ def parse_arguments():
     return p.parse_args()
 
 
+def get_face_rotation(face_name):
+    """
+    Returns the Rotation matrix (3x3) that rotates the global camera frame 
+    to look at the specific cubemap face.
+    Assumes the base camera is looking at +Z (Front).
+    """
+    # Standard Cubemap directions (View direction):
+    # Front: +Z
+    # Back:  -Z
+    # Right: +X
+    # Left:  -X
+    # Top:   +Y
+    # Bottom: -Y
+    
+    # But we need the rotation of the CAMERA axes (X-right, Y-down, Z-forward).
+    # So we need a rotation R such that R * [0,0,1] = FaceDirection
+    
+    # Identity (Front)
+    if face_name == 'front':
+        return np.eye(3)
+    
+    # Rotate 180 around Y (Back)
+    if face_name == 'back':
+        return np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
+        
+    # Rotate -90 around Y (Right)
+    if face_name == 'right':
+        return np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
+        
+    # Rotate +90 around Y (Left)
+    if face_name == 'left':
+        return np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]])
+        
+    # Rotate -90 around X (Top)
+    if face_name == 'top':
+        return np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
+        
+    # Rotate +90 around X (Bottom)
+    if face_name == 'bottom':
+        return np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
+
+    raise ValueError(f"Unknown face: {face_name}")
+
+
+def _load_pose_matrices(batch_paths, rot_trans_dir):
+    """
+    Load rotation/translation for each image in the batch and construct extrinsics/intrinsics.
+    """
+    extrinsics_list = []
+    intrinsics_list = []
+    
+    for path in batch_paths:
+        # path format: uuid_index.jpg_perspective_view_face.jpg
+        # npz format: shot_uuid_index.jpg.npz
+        # We need to extract uuid_index from the path
+        try:
+            stem = path.stem # uuid_index.jpg_perspective_view_face
+            # Split by .jpg_perspective_view_
+            parts = stem.split(".jpg_perspective_view_")
+            if len(parts) != 2:
+                print(f"[DA3][WARN] Could not parse filename: {stem}, skipping pose")
+                return None, None
+                
+            image_id = parts[0] # uuid_index
+            face_name = parts[1] # front, back, etc.
+            
+            npz_name = f"shot_{image_id}.jpg.npz"
+            npz_path = rot_trans_dir / npz_name
+            
+            if not npz_path.exists():
+                print(f"[DA3][WARN] Pose file not found: {npz_path}, skipping pose")
+                return None, None
+                
+            data = np.load(npz_path)
+            
+            # R_global (3x3) and C_global (3,)
+            R_global = data['rotation']
+            C_global = data['centre']
+            
+            # Convert to World-to-Camera Translation: t = -R * C
+            t_global = -R_global @ C_global
+            
+            # Get Face Rotation
+            R_face_local = get_face_rotation(face_name)
+            
+            # Combine Rotations
+            # R_total = R_face_local @ R_global
+            # t_total = R_face_local @ t_global
+            
+            R_total = R_face_local @ R_global
+            t_total = R_face_local @ t_global
+            
+            # Build 4x4 Extrinsic Matrix
+            E = np.eye(4)
+            E[:3, :3] = R_total
+            E[:3, 3] = t_total
+
+            # DEBUG: Log first few poses to check coordinate system
+            if len(extrinsics_list) == 0: 
+                print(f"[DA3][DEBUG] Pose for {path.name}:")
+                print(f"  R_global:\n{R_global}")
+                print(f"  t_global: {t_global}")
+                print(f"  R_face ({face_name}):\n{R_face_local}")
+                print(f"  Final Extrinsic:\n{E}")
+            
+            # Build Intrinsics (90 deg FOV)
+            # Assuming 512x512 or similar square images
+            # We need to open the image to get W/H? Or assume based on config?
+            # For now, let's load the image size inside the main loop or here?
+            # To be safe, let's assume 504 (or whatever process_res is) or just 1.0 normalized?
+            # DA3 uses pixel coordinates. Let's use a dummy size and let DA3 resize?
+            # NO, DA3 needs actual pixel focal length matching the input image.
+            # We will peek at the image size.
+            with Image.open(path) as img:
+                W, H = img.size
+                
+            f = W / 2.0
+            c = W / 2.0
+            K = np.array([
+                [f, 0, c],
+                [0, f, c],
+                [0, 0, 1]
+            ])
+            
+            extrinsics_list.append(E)
+            intrinsics_list.append(K)
+            
+        except Exception as e:
+            print(f"[DA3][WARN] Error processing pose for {path.name}: {e}")
+            return None, None
+
+    return np.stack(extrinsics_list), np.stack(intrinsics_list)
+
+
 def _load_model(device: str):
     """Load DA3METRIC-LARGE model."""
     from depth_anything_3.api import DepthAnything3
@@ -25,17 +159,33 @@ def _load_model(device: str):
 
 
 def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir: Path, *, 
-                            per_image_progress_start: int, total_images: int):
+                            per_image_progress_start: int, total_images: int, rot_trans_dir: Path):
     """Process one batch and save outputs. Returns (completed_count, error_count, per_image_times)."""
     t_batch_start = time.perf_counter()
     completed = 0
     errors = 0
     per_image_times = []
 
+    # Try to load poses
+    extrinsics, intrinsics = _load_pose_matrices(batch_paths, rot_trans_dir)
+    if extrinsics is not None:
+        extrinsics = torch.from_numpy(extrinsics).float()
+        intrinsics = torch.from_numpy(intrinsics).float()
+        # DEBUG: Check shapes
+        # print(f"[DA3][DEBUG] Extrinsics shape: {extrinsics.shape}, Intrinsics shape: {intrinsics.shape}")
+    else:
+        print("[DA3][WARN] Running without pose info (could not load matrices).")
+        # pass
+
     try:
         # Run inference
         with torch.no_grad():
-            prediction = model.inference(image=[str(p) for p in batch_paths], process_res=504)
+            prediction = model.inference(
+                image=[str(p) for p in batch_paths], 
+                process_res=504,
+                extrinsics=extrinsics,
+                intrinsics=intrinsics
+            )
         
         # Save results for each image
         for idx, (path, depth) in enumerate(zip(batch_paths, prediction.depth), start=1):
@@ -109,10 +259,12 @@ def main():
     data_root = os.getenv("DATA_ROOT", "/mnt/shared/data")
     data_path = os.path.join(data_root, args.data)
     undistort_path = os.path.join(data_path, "undistorted")
+    rot_trans_dir = Path(data_path) / "rot_trans_matrix_npy"
     images_dir = Path(undistort_path) / "images"
     out_dir = Path(undistort_path) / "undistort_depth_output"
     print(f"[DA3] Using data root: {data_root}")
     print(f"[DA3] Images dir: {data_path}/undistorted/images")
+    print(f"[DA3] Poses dir: {rot_trans_dir}")
 
     if not images_dir.is_dir():
         t_total = time.perf_counter() - t_total_start
@@ -168,6 +320,7 @@ def main():
             model, device, batch_paths, out_dir,
             per_image_progress_start=next_progress_idx,
             total_images=total,
+            rot_trans_dir=rot_trans_dir
         )
         completed += c
         errors += e
