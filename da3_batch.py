@@ -155,6 +155,7 @@ def _load_model(device: str):
     """Load DA3METRIC-LARGE model."""
     from depth_anything_3.api import DepthAnything3
     model = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE").to(device).eval()
+    print("cam_enc:", model.model.cam_enc)
     return model
 
 

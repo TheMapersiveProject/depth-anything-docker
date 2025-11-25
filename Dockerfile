@@ -39,7 +39,8 @@ RUN python3 -m pip install --no-cache-dir --index-url https://download.pytorch.o
       "hf-transfer>=0.1.6"
 
 # Install DA3 from source
-RUN python3 -m pip install --no-cache-dir -e /app
+RUN rm -rf /opt/hf_cache/* && \
+    python3 -m pip install --no-cache-dir -e /app
 
 # Writable paths + user setup
 RUN useradd -m runner \
