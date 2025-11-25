@@ -152,12 +152,10 @@ def _load_pose_matrices(batch_paths, rot_trans_dir):
 
 
 def _load_model(device: str):
-    """Load DA3METRIC-LARGE model."""
     from depth_anything_3.api import DepthAnything3
-    model = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE").to(device).eval()
+    model = DepthAnything3(model_name="da3metric-large").to(device).eval()
     print("cam_enc:", model.model.cam_enc)
     return model
-
 
 def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir: Path, *, 
                             per_image_progress_start: int, total_images: int, rot_trans_dir: Path):
@@ -168,25 +166,15 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
     per_image_times = []
 
     # Try to load poses
-    extrinsics, intrinsics = _load_pose_matrices(batch_paths, rot_trans_dir)
-    if extrinsics is not None:
-        # Keep as numpy arrays - DA3 will convert to tensors internally
-        # extrinsics = torch.from_numpy(extrinsics).float()
-        # intrinsics = torch.from_numpy(intrinsics).float()
-        # DEBUG: Check shapes
-        print(f"[DA3][DEBUG] Extrinsics shape: {extrinsics.shape}, Intrinsics shape: {intrinsics.shape}")
-    else:
-        print("[DA3][WARN] Running without pose info (could not load matrices).")
-        # pass
+    extrinsics = None
+    intrinsics = None
 
     try:
         # Run inference
         with torch.no_grad():
             prediction = model.inference(
-                image=[str(p) for p in batch_paths], 
-                process_res=504,
-                extrinsics=extrinsics,
-                intrinsics=intrinsics
+                image=[str(p) for p in batch_paths],
+                process_res=504
             )
         
         # Save results for each image
