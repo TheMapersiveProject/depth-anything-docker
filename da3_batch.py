@@ -153,7 +153,7 @@ def _load_pose_matrices(batch_paths, rot_trans_dir):
 
 def _load_model(device: str):
     from depth_anything_3.api import DepthAnything3
-    model = DepthAnything3(model_name="da3metric-large").to(device).eval()
+    model = DepthAnything3(model_name="da3-large").to(device).eval()
     print("cam_enc:", model.model.cam_enc)
     return model
 
