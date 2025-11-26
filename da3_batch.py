@@ -16,6 +16,28 @@ def parse_arguments():
                    help="Batch size for inference (default: 1; if device=cpu this will be forced to 1)")
     return p.parse_args()
 
+def load_intrinsics_from_reconstruction(json_path):
+    import json
+    with open(json_path, "r") as f:
+        reco = json.load(f)
+
+    # Get first camera definition
+    cam_name, cam = next(iter(reco["cameras"].items()))
+
+    w = cam["width"]
+    h = cam["height"]
+    f = cam["focal"] * w       # focal is normalized in OpenSfM
+    cx = w / 2
+    cy = h / 2
+
+    K = np.array([
+        [f, 0, cx],
+        [0, f, cy],
+        [0, 0, 1]
+    ], dtype=np.float32)
+
+    return K
+
 
 def get_face_rotation(face_name):
     """
@@ -160,6 +182,7 @@ def _load_model(device: str):
 def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir: Path, *, 
                             per_image_progress_start: int, total_images: int, rot_trans_dir: Path):
     """Process one batch and save outputs. Returns (completed_count, error_count, per_image_times)."""
+    global global_intrinsics 
     t_batch_start = time.perf_counter()
     completed = 0
     errors = 0
@@ -174,8 +197,10 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
         with torch.no_grad():
             prediction = model.inference(
                 image=[str(p) for p in batch_paths],
-                process_res=504
+                process_res=504,
+                intrinsics=global_intrinsics  # <-- ADD THIS
             )
+
         
         # Save results for each image
         for idx, (path, depth) in enumerate(zip(batch_paths, prediction.depth), start=1):
@@ -243,6 +268,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
 
     return completed, errors, per_image_times
 
+global_intrinsics = None
 
 def main():
     print("[DA3] VERSION: v2 (Numpy Poses Fix)")
@@ -271,6 +297,18 @@ def main():
         print("[DA3][WARN] CUDA was requested but not available. Falling back to CPU.")
     print(f"[DA3] Using device: {device}")
 
+    # Load intrinsics from reconstruction.json
+    reco_json = Path(undistort_path) / "reconstruction.json"
+
+    if reco_json.exists():
+        global_intrinsics = load_intrinsics_from_reconstruction(reco_json)
+        print("[DA3] Loaded intrinsics from reconstruction.json:")
+        print(global_intrinsics)
+    else:
+        print("[DA3][WARN] reconstruction.json not found → intrinsics=None")
+        global_intrinsics = None
+
+
     # Batch size
     batch_size = max(1, int(args.batch))
     if device == "cpu":
@@ -278,7 +316,7 @@ def main():
     print(f"[DA3] Batch size: {batch_size}")
 
     # Load model
-    print(f"[DA3] Loading model: DA3METRIC-LARGE ...")
+    print(f"[DA3] Loading model: DA3LARGE ...")
     t_load_start = time.perf_counter()
     model = _load_model(device)
     t_load = time.perf_counter() - t_load_start
