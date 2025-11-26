@@ -179,9 +179,17 @@ def _load_pose_matrices(batch_paths, rot_trans_dir):
 
 def _load_model(device: str):
     from depth_anything_3.api import DepthAnything3
-    model = DepthAnything3(model_name="da3-large").to(device).eval()
-    print("cam_enc:", model.model.cam_enc)
+
+    # CHANGE THIS ↓ to whatever you want to run
+    model_name = "da3metric-large"     # <-- you choose here
+
+    model = DepthAnything3(model_name=model_name).to(device).eval()
+
+    # SAFE CHECK — this line tells you if intrinsics are allowed
+    print("cam_enc:", getattr(model.model, "cam_enc", None))
+
     return model
+
 
 def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir: Path, *, 
                             per_image_progress_start: int, total_images: int, rot_trans_dir: Path):
