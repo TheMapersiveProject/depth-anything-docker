@@ -21,12 +21,14 @@ def load_intrinsics_from_reconstruction(json_path):
     with open(json_path, "r") as f:
         reco = json.load(f)
 
-    # Get first camera definition
-    cam_name, cam = next(iter(reco["cameras"].items()))
+    # reconstruction.json is a LIST → take index 0
+    reco0 = reco[0]
+
+    cam_name, cam = next(iter(reco0["cameras"].items()))
 
     w = cam["width"]
     h = cam["height"]
-    f = cam["focal"] * w       # focal is normalized in OpenSfM
+    f = cam["focal"] * w
     cx = w / 2
     cy = h / 2
 
