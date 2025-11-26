@@ -220,6 +220,14 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                 interpolation=cv2.INTER_CUBIC   # smoother than bilinear, avoids waffle pattern
             ).astype(np.float32)
 
+            # Clean DA3 waffle pattern (edge-preserving)
+            depth_abs = cv2.bilateralFilter(
+                depth_abs, 
+                d=5, 
+                sigmaColor=0.4, 
+                sigmaSpace=2.0
+            )
+
             stem = path.stem
             npz_path = out_dir / f"{stem}_depth_meters.npz"
             png_path = out_dir / f"{stem}_depth_vis.png"
@@ -263,6 +271,13 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                         interpolation=cv2.INTER_CUBIC
                     ).astype(np.float32)
 
+                    # CLEAN NOISE HERE ALSO
+                    depth_abs = cv2.bilateralFilter(
+                        depth_abs,
+                        d=5,
+                        sigmaColor=0.4,
+                        sigmaSpace=2.0
+                    )
 
                     stem = path.stem
                     npz_path = out_dir / f"{stem}_depth_meters.npz"
