@@ -35,8 +35,13 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
     try:
         # Run inference
         with torch.no_grad():
-            prediction = model.inference(image=[str(p) for p in batch_paths], process_res=504)
-        
+            prediction = model.inference(image=[str(p) for p in batch_paths], process_res=1024)
+
+        #  Print intrinsics (per image)
+        print("Estimated intrinsics:")
+        for intr, path in zip(prediction.intrinsics, batch_paths):
+            print(f" - {path.name}: {intr}")
+                
         # Save results for each image
         for idx, (path, depth) in enumerate(zip(batch_paths, prediction.depth), start=1):
             depth_abs = depth.astype(np.float32)
@@ -71,7 +76,9 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
             for idx, path in enumerate(batch_paths, start=1):
                 try:
                     t_img_start = time.perf_counter()
-                    prediction = model.inference(image=[str(path)], process_res=504)
+                    prediction = model.inference(image=[str(path)], process_res=1024)
+                    # Print intrinsics in fallback
+                    print(f"Estimated intrinsics for {path.name}: {prediction.intrinsics[0]}")
                     depth_abs = prediction.depth[0].astype(np.float32)
 
                     stem = path.stem
