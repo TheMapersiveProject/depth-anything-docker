@@ -151,18 +151,53 @@ def _load_pose_matrices(batch_paths, rot_trans_dir):
     return np.stack(extrinsics_list), np.stack(intrinsics_list)
 
 
+# Global cache to prevent double loading
+_model_cache = {}
+
 def _load_model(device: str):
     """Load DA3 model (configurable via DA3_MODEL env var)."""
     from depth_anything_3.api import DepthAnything3
     
+    # Check cache first
+    cache_key = (device, os.getenv("DA3_MODEL", "depth-anything/DA3NESTED-GIANT-LARGE"))
+    if cache_key in _model_cache:
+        print(f"[DA3] Using cached model for {cache_key[1]}")
+        return _model_cache[cache_key]
+    
     model_name = os.getenv("DA3_MODEL", "depth-anything/DA3NESTED-GIANT-LARGE")
-    print(f"[DA3] Loading model: {model_name} ...")
+    print(f"[DA3] Loading model: {model_name} (device={device}) ...")
+    print(f"[DA3][DEBUG] DA3_MODEL env var: {repr(os.getenv('DA3_MODEL'))}")
     
     model = DepthAnything3.from_pretrained(model_name).to(device).eval()
     
-    # Check if model has camera encoder
-    has_cam_enc = hasattr(model, 'model') and hasattr(model.model, 'cam_enc') and model.model.cam_enc is not None
+    # Cache the model
+    _model_cache[cache_key] = model
+    
+    # Detailed check for camera encoder
+    print(f"[DA3][DEBUG] Model type: {type(model)}")
+    print(f"[DA3][DEBUG] Model name attr: {getattr(model, 'model_name', 'N/A')}")
+    print(f"[DA3][DEBUG] Has 'model' attr: {hasattr(model, 'model')}")
+    if hasattr(model, 'model'):
+        print(f"[DA3][DEBUG] model.model type: {type(model.model)}")
+        print(f"[DA3][DEBUG] Has 'cam_enc' attr: {hasattr(model.model, 'cam_enc')}")
+        if hasattr(model.model, 'cam_enc'):
+            print(f"[DA3][DEBUG] cam_enc value: {model.model.cam_enc}")
+            print(f"[DA3][DEBUG] cam_enc type: {type(model.model.cam_enc)}")
+        if hasattr(model.model, 'cam_dec'):
+            print(f"[DA3][DEBUG] cam_dec value: {model.model.cam_dec}")
+            print(f"[DA3][DEBUG] cam_dec type: {type(model.model.cam_dec)}")
+    
+    # Check if model has camera encoder (both cam_dec and cam_enc are created together)
+    has_cam_enc = (hasattr(model, 'model') and 
+                    hasattr(model.model, 'cam_enc') and 
+                    model.model.cam_enc is not None and
+                    hasattr(model.model, 'cam_dec') and
+                    model.model.cam_dec is not None)
     print(f"[DA3] Camera encoder available: {has_cam_enc}")
+    
+    if not has_cam_enc:
+        print("[DA3][WARN] Camera encoder not available - multi-view pose conditioning disabled.")
+        print("[DA3][WARN] Depth estimation will proceed without cross-view consistency.")
     
     return model
 
