@@ -152,9 +152,18 @@ def _load_pose_matrices(batch_paths, rot_trans_dir):
 
 
 def _load_model(device: str):
-    """Load DA3METRIC-LARGE model."""
+    """Load DA3 model (configurable via DA3_MODEL env var)."""
     from depth_anything_3.api import DepthAnything3
-    model = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE").to(device).eval()
+    
+    model_name = os.getenv("DA3_MODEL", "depth-anything/DA3NESTED-GIANT-LARGE")
+    print(f"[DA3] Loading model: {model_name} ...")
+    
+    model = DepthAnything3.from_pretrained(model_name).to(device).eval()
+    
+    # Check if model has camera encoder
+    has_cam_enc = hasattr(model, 'model') and hasattr(model.model, 'cam_enc') and model.model.cam_enc is not None
+    print(f"[DA3] Camera encoder available: {has_cam_enc}")
+    
     return model
 
 
@@ -169,14 +178,16 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
     # Try to load poses
     extrinsics, intrinsics = _load_pose_matrices(batch_paths, rot_trans_dir)
     if extrinsics is not None:
-        # Keep as numpy arrays - DA3 will convert to tensors internally
-        # extrinsics = torch.from_numpy(extrinsics).float()
-        # intrinsics = torch.from_numpy(intrinsics).float()
-        # DEBUG: Check shapes
-        print(f"[DA3][DEBUG] Extrinsics shape: {extrinsics.shape}, Intrinsics shape: {intrinsics.shape}")
+        # Ensure model has camera encoder support
+        cam_enc = getattr(getattr(model, "model", None), "cam_enc", None)
+        if cam_enc is None:
+            print("[DA3][WARN] Model has no camera encoder; ignoring extrinsics/intrinsics.")
+            extrinsics = None
+            intrinsics = None
+        else:
+            print(f"[DA3][DEBUG] Extrinsics shape: {extrinsics.shape}, Intrinsics shape: {intrinsics.shape}")
     else:
         print("[DA3][WARN] Running without pose info (could not load matrices).")
-        # pass
 
     try:
         # Run inference
@@ -256,7 +267,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
 
 
 def main():
-    print("[DA3] VERSION: v2 (Numpy Poses Fix)")
+    print("[DA3] VERSION: v3 (Configurable Model + Cam Encoder Check)")
     args = parse_arguments()
     t_total_start = time.perf_counter()
 

@@ -83,6 +83,9 @@ def main():
 
     os.environ.setdefault("HF_HOME", "/opt/hf_cache")
     os.environ.setdefault("TRANSFORMERS_CACHE", "/opt/hf_cache")
+    
+    # Set default DA3 model (can be overridden via environment)
+    os.environ.setdefault("DA3_MODEL", "depth-anything/DA3NESTED-GIANT-LARGE")
 
     # Use shared EFS data
     DATA_ROOT = Path(ENV["DATA_ROOT"])
