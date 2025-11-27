@@ -18,9 +18,10 @@ def parse_arguments():
 
 
 def _load_model(device: str):
-    """Load DA3METRIC-LARGE model."""
+    """Load DA3-BASE model."""
     from depth_anything_3.api import DepthAnything3
-    model = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE").to(device).eval()
+    #model = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE").to(device).eval()
+    model = DepthAnything3.from_pretrained("depth-anything/DA3-BASE").to(device).eval()
     return model
 
 
