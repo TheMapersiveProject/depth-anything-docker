@@ -134,20 +134,27 @@ def _load_pose_matrices(batch_paths, rot_trans_dir):
             # Assuming 512x512 or similar square images
             # We need to open the image to get W/H? Or assume based on config?
             # For now, let's load the image size inside the main loop or here?
-            # To be safe, let's assume 504 (or whatever process_res is) or just 1.0 normalized?
+            # To be safe, let's assume 1024 (or whatever process_res is) or just 1.0 normalized?
             # DA3 uses pixel coordinates. Let's use a dummy size and let DA3 resize?
             # NO, DA3 needs actual pixel focal length matching the input image.
             # We will peek at the image size.
             with Image.open(path) as img:
                 W, H = img.size
-                
-            f = W / 2.0
-            c = W / 2.0
+
+            # --- REAL CAMERA INTRINSICS YOU WANT ---
+            fx = 1637.0
+            fy = 1637.0
+            cx = W / 2.0
+            cy = H / 2.0
+
             K = np.array([
-                [f, 0, c],
-                [0, f, c],
-                [0, 0, 1]
-            ])
+                [fx, 0, cx],
+                [0, fy, cy],
+                [0,  0,  1]
+            ], dtype=np.float32)
+
+            print(f"[DA3][DEBUG] Intrinsics for {path.name}:\n{K}")  # <-- ADD THIS
+
             
             extrinsics_list.append(E)
             intrinsics_list.append(K)
@@ -240,7 +247,7 @@ def _load_model(device: str):
     return model
 
 
-def _safe_inference(model, image_paths, extrinsics=None, intrinsics=None, process_res=504):
+def _safe_inference(model, image_paths, extrinsics=None, intrinsics=None, process_res=1024):
     """
     Safely run model inference with fallback for alignment errors.
     
@@ -303,7 +310,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                     image_paths=[str(p) for p in batch_paths],
                     extrinsics=extrinsics,
                     intrinsics=intrinsics,
-                    process_res=504
+                    process_res=1024
                 )
             except Exception as align_error:
                 # Check if it's the Umeyama alignment error
@@ -320,7 +327,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                             image_paths=[str(path)],
                             extrinsics=single_ext,
                             intrinsics=single_int,
-                            process_res=504
+                            process_res=1024
                         )
                         predictions.append(pred)
                     
@@ -381,7 +388,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                         image_paths=[str(path)],
                         extrinsics=single_extrinsics,
                         intrinsics=single_intrinsics,
-                        process_res=504
+                        process_res=1024
                     )
                     depth_abs = prediction.depth[0].astype(np.float32)
 
