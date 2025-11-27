@@ -154,6 +154,22 @@ def _load_pose_matrices(batch_paths, rot_trans_dir):
 # Global cache to prevent double loading
 _model_cache = {}
 
+def _has_camera_encoder(model) -> bool:
+    """Check if model has camera encoder support (handles both regular and nested models)."""
+    if not hasattr(model, 'model'):
+        return False
+    
+    # Check if it's a nested model (has da3 branch)
+    if hasattr(model.model, 'da3'):
+        da3_branch = model.model.da3
+        return (hasattr(da3_branch, 'cam_enc') and da3_branch.cam_enc is not None and
+                hasattr(da3_branch, 'cam_dec') and da3_branch.cam_dec is not None)
+    else:
+        # Regular model
+        return (hasattr(model.model, 'cam_enc') and model.model.cam_enc is not None and
+                hasattr(model.model, 'cam_dec') and model.model.cam_dec is not None)
+
+
 def _load_model(device: str):
     """Load DA3 model (configurable via DA3_MODEL env var)."""
     from depth_anything_3.api import DepthAnything3
@@ -177,22 +193,36 @@ def _load_model(device: str):
     print(f"[DA3][DEBUG] Model type: {type(model)}")
     print(f"[DA3][DEBUG] Model name attr: {getattr(model, 'model_name', 'N/A')}")
     print(f"[DA3][DEBUG] Has 'model' attr: {hasattr(model, 'model')}")
+    
     if hasattr(model, 'model'):
         print(f"[DA3][DEBUG] model.model type: {type(model.model)}")
-        print(f"[DA3][DEBUG] Has 'cam_enc' attr: {hasattr(model.model, 'cam_enc')}")
-        if hasattr(model.model, 'cam_enc'):
-            print(f"[DA3][DEBUG] cam_enc value: {model.model.cam_enc}")
-            print(f"[DA3][DEBUG] cam_enc type: {type(model.model.cam_enc)}")
-        if hasattr(model.model, 'cam_dec'):
-            print(f"[DA3][DEBUG] cam_dec value: {model.model.cam_dec}")
-            print(f"[DA3][DEBUG] cam_dec type: {type(model.model.cam_dec)}")
+        model_type_name = type(model.model).__name__
+        
+        # Check if it's a nested model (has da3 branch)
+        if hasattr(model.model, 'da3'):
+            print(f"[DA3][DEBUG] Nested model detected - checking da3 branch")
+            da3_branch = model.model.da3
+            print(f"[DA3][DEBUG] da3 branch type: {type(da3_branch)}")
+            print(f"[DA3][DEBUG] da3 has 'cam_enc' attr: {hasattr(da3_branch, 'cam_enc')}")
+            if hasattr(da3_branch, 'cam_enc'):
+                print(f"[DA3][DEBUG] da3.cam_enc value: {da3_branch.cam_enc}")
+                print(f"[DA3][DEBUG] da3.cam_enc type: {type(da3_branch.cam_enc)}")
+            if hasattr(da3_branch, 'cam_dec'):
+                print(f"[DA3][DEBUG] da3.cam_dec value: {da3_branch.cam_dec}")
+                print(f"[DA3][DEBUG] da3.cam_dec type: {type(da3_branch.cam_dec)}")
+        else:
+            # Regular model - check directly
+            print(f"[DA3][DEBUG] Regular model - checking directly")
+            print(f"[DA3][DEBUG] Has 'cam_enc' attr: {hasattr(model.model, 'cam_enc')}")
+            if hasattr(model.model, 'cam_enc'):
+                print(f"[DA3][DEBUG] cam_enc value: {model.model.cam_enc}")
+                print(f"[DA3][DEBUG] cam_enc type: {type(model.model.cam_enc)}")
+            if hasattr(model.model, 'cam_dec'):
+                print(f"[DA3][DEBUG] cam_dec value: {model.model.cam_dec}")
+                print(f"[DA3][DEBUG] cam_dec type: {type(model.model.cam_dec)}")
     
-    # Check if model has camera encoder (both cam_dec and cam_enc are created together)
-    has_cam_enc = (hasattr(model, 'model') and 
-                    hasattr(model.model, 'cam_enc') and 
-                    model.model.cam_enc is not None and
-                    hasattr(model.model, 'cam_dec') and
-                    model.model.cam_dec is not None)
+    # Check for camera encoder using helper function
+    has_cam_enc = _has_camera_encoder(model)
     print(f"[DA3] Camera encoder available: {has_cam_enc}")
     
     if not has_cam_enc:
@@ -214,8 +244,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
     extrinsics, intrinsics = _load_pose_matrices(batch_paths, rot_trans_dir)
     if extrinsics is not None:
         # Ensure model has camera encoder support
-        cam_enc = getattr(getattr(model, "model", None), "cam_enc", None)
-        if cam_enc is None:
+        if not _has_camera_encoder(model):
             print("[DA3][WARN] Model has no camera encoder; ignoring extrinsics/intrinsics.")
             extrinsics = None
             intrinsics = None
@@ -268,7 +297,19 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
             for idx, path in enumerate(batch_paths, start=1):
                 try:
                     t_img_start = time.perf_counter()
-                    prediction = model.inference(image=[str(path)], process_res=504)
+                    # For single image, extract corresponding extrinsics/intrinsics if available
+                    single_extrinsics = None
+                    single_intrinsics = None
+                    if extrinsics is not None and intrinsics is not None:
+                        single_extrinsics = extrinsics[idx-1:idx]  # Keep batch dimension
+                        single_intrinsics = intrinsics[idx-1:idx]
+                    
+                    prediction = model.inference(
+                        image=[str(path)], 
+                        process_res=504,
+                        extrinsics=single_extrinsics,
+                        intrinsics=single_intrinsics
+                    )
                     depth_abs = prediction.depth[0].astype(np.float32)
 
                     stem = path.stem
