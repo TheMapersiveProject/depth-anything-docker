@@ -36,7 +36,24 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
     try:
         # Run inference
         with torch.no_grad():
-            prediction = model.inference(image=[str(p) for p in batch_paths], process_res=1024)
+            # --- CUSTOM INTRINSICS OVERRIDE ------------------------------
+            # Use your focal (fx = fy = 1637) and compute cx, cy from first image
+            sample_img = Image.open(batch_paths[0])
+            W, H = sample_img.size
+            fx = fy = 1637.0
+            cx = W / 2.0
+            cy = H / 2.0
+
+            custom_intrinsics = np.array([
+                [fx, 0,  cx],
+                [0,  fy, cy],
+                [0,   0,  1]
+            ], dtype=np.float32)
+
+            # Duplicate for each image in the batch
+            intrinsics_list = np.stack([custom_intrinsics for _ in batch_paths], axis=0)
+            # --------------------------------------------------------------
+            prediction = model.inference(image=[str(p) for p in batch_paths], process_res=1024, intrinsics=intrinsics_list,)
 
         #  Print intrinsics (per image)
         print("Estimated intrinsics:")
@@ -73,11 +90,32 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                 torch.cuda.empty_cache()
             except Exception:
                 pass
-
+            
             for idx, path in enumerate(batch_paths, start=1):
                 try:
                     t_img_start = time.perf_counter()
-                    prediction = model.inference(image=[str(path)], process_res=1024)
+                    # --- CUSTOM INTRINSICS OVERRIDE (fallback) --------------------
+                    sample_img = Image.open(path)
+                    W, H = sample_img.size
+                    fx = fy = 1637.0
+                    cx = W / 2.0
+                    cy = H / 2.0
+
+                    custom_intrinsics = np.array([
+                        [fx, 0,  cx],
+                        [0,  fy, cy],
+                        [0,   0,  1]
+                    ], dtype=np.float32)
+
+                    intrinsics_list = np.array([custom_intrinsics], dtype=np.float32)
+                    # ----------------------------------------------------------------
+
+                    prediction = model.inference(
+                        image=[str(path)],
+                        process_res=1024,
+                        intrinsics=intrinsics_list,    
+                    )
+
                     # Print intrinsics in fallback
                     print(f"Estimated intrinsics for {path.name}: {prediction.intrinsics[0]}")
                     depth_abs = prediction.depth[0].astype(np.float32)
@@ -141,7 +179,7 @@ def main():
     print(f"[DA3] Batch size: {batch_size}")
 
     # Load model
-    print(f"[DA3] Loading model: DA3METRIC-LARGE ...")
+    print(f"[DA3] Loading model: DA3-BASE ...")
     t_load_start = time.perf_counter()
     model = _load_model(device)
     t_load = time.perf_counter() - t_load_start
