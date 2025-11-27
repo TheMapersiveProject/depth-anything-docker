@@ -255,13 +255,60 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
 
     try:
         # Run inference
+        # Note: With cubemap faces from same panorama, poses are very similar which can cause
+        # Umeyama alignment to fail. We catch this and fall back to individual processing.
         with torch.no_grad():
-            prediction = model.inference(
-                image=[str(p) for p in batch_paths], 
-                process_res=504,
-                extrinsics=extrinsics,
-                intrinsics=intrinsics
-            )
+            try:
+                prediction = model.inference(
+                    image=[str(p) for p in batch_paths], 
+                    process_res=504,
+                    extrinsics=extrinsics,
+                    intrinsics=intrinsics,
+                    align_to_input_ext_scale=False
+                )
+            except Exception as align_error:
+                # Check if it's the Umeyama alignment error
+                error_str = str(align_error)
+                if "Degenerate covariance rank" in error_str or "Umeyama alignment" in error_str or "GeometryException" in error_str:
+                    print(f"[DA3][WARN] Pose alignment failed for batch (likely similar cubemap poses). Processing images individually.")
+                    # Process each image individually - single images shouldn't trigger alignment
+                    # This preserves camera conditioning benefits while avoiding alignment issues
+                    predictions = []
+                    for idx, path in enumerate(batch_paths):
+                        single_ext = extrinsics[idx:idx+1] if extrinsics is not None else None
+                        single_int = intrinsics[idx:idx+1] if intrinsics is not None else None
+                        try:
+                            pred = model.inference(
+                                image=[str(path)], 
+                                process_res=504,
+                                extrinsics=single_ext,
+                                intrinsics=single_int,
+                                align_to_input_ext_scale=False
+                            )
+                        except Exception as single_error:
+                            # If individual processing also fails, fall back to no extrinsics
+                            error_str = str(single_error)
+                            if "Degenerate covariance rank" in error_str or "Umeyama alignment" in error_str:
+                                print(f"[DA3][WARN] Alignment failed for {path.name}, using without extrinsics.")
+                                pred = model.inference(
+                                    image=[str(path)], 
+                                    process_res=504,
+                                    extrinsics=None,
+                                    intrinsics=None
+                                )
+                            else:
+                                raise
+                        predictions.append(pred)
+                    
+                    # Combine predictions into a single batch-like result
+                    # Create a mock prediction object with combined depths
+                    from types import SimpleNamespace
+                    combined_depths = np.stack([p.depth[0] for p in predictions])
+                    prediction = SimpleNamespace()
+                    prediction.depth = combined_depths
+                else:
+                    # Re-raise if it's a different error
+                    raise
         
         # Save results for each image
         for idx, (path, depth) in enumerate(zip(batch_paths, prediction.depth), start=1):
