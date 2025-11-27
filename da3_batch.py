@@ -118,9 +118,17 @@ def _load_pose_matrices(batch_paths, rot_trans_dir):
             if len(extrinsics_list) == 0: 
                 print(f"[DA3][DEBUG] Pose for {path.name}:")
                 print(f"  R_global:\n{R_global}")
-                print(f"  t_global: {t_global}")
+                print(f"  C_global (camera center): {C_global}")
+                print(f"  t_global (W2C translation): {t_global}")
                 print(f"  R_face ({face_name}):\n{R_face_local}")
-                print(f"  Final Extrinsic:\n{E}")
+                print(f"  R_total:\n{R_total}")
+                print(f"  t_total:\n{t_total}")
+                print(f"  Final Extrinsic (W2C):\n{E}")
+                # Verify: Camera center should be at -R_total.T @ t_total
+                C_verify = -R_total.T @ t_total
+                print(f"  Verify camera center: {C_verify} (should match rotated C_global)")
+                C_rotated = R_face_local @ C_global
+                print(f"  Rotated C_global: {C_rotated}")
             
             # Build Intrinsics (90 deg FOV)
             # Assuming 512x512 or similar square images
@@ -232,6 +240,39 @@ def _load_model(device: str):
     return model
 
 
+def _safe_inference(model, image_paths, extrinsics=None, intrinsics=None, process_res=504):
+    """
+    Safely run model inference with fallback for alignment errors.
+    
+    For cubemap faces (rotation-only poses), the Umeyama alignment fails because
+    there's no translation baseline. This function catches that error and retries
+    without extrinsics as a fallback.
+    """
+    try:
+        return model.inference(
+            image=image_paths,
+            process_res=process_res,
+            extrinsics=extrinsics,
+            intrinsics=intrinsics,
+            align_to_input_ext_scale=False
+        )
+    except Exception as e:
+        error_str = str(e)
+        if "Degenerate covariance rank" in error_str or "Umeyama alignment" in error_str or "GeometryException" in error_str:
+            # Alignment failed - retry without extrinsics
+            # This loses camera conditioning but produces valid depth
+            print(f"[DA3][WARN] Pose alignment failed, retrying without extrinsics.")
+            return model.inference(
+                image=image_paths,
+                process_res=process_res,
+                extrinsics=None,
+                intrinsics=None
+            )
+        else:
+            # Different error - re-raise
+            raise
+
+
 def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir: Path, *, 
                             per_image_progress_start: int, total_images: int, rot_trans_dir: Path):
     """Process one batch and save outputs. Returns (completed_count, error_count, per_image_times)."""
@@ -254,50 +295,33 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
         print("[DA3][WARN] Running without pose info (could not load matrices).")
 
     try:
-        # Run inference
-        # Note: With cubemap faces from same panorama, poses are very similar which can cause
-        # Umeyama alignment to fail. We catch this and fall back to individual processing.
+        # Run inference with safe fallback for alignment errors
         with torch.no_grad():
             try:
-                prediction = model.inference(
-                    image=[str(p) for p in batch_paths], 
-                    process_res=504,
+                prediction = _safe_inference(
+                    model,
+                    image_paths=[str(p) for p in batch_paths],
                     extrinsics=extrinsics,
                     intrinsics=intrinsics,
-                    align_to_input_ext_scale=False
+                    process_res=504
                 )
             except Exception as align_error:
                 # Check if it's the Umeyama alignment error
                 error_str = str(align_error)
                 if "Degenerate covariance rank" in error_str or "Umeyama alignment" in error_str or "GeometryException" in error_str:
                     print(f"[DA3][WARN] Pose alignment failed for batch (likely similar cubemap poses). Processing images individually.")
-                    # Process each image individually - single images shouldn't trigger alignment
-                    # This preserves camera conditioning benefits while avoiding alignment issues
+                    # Process each image individually with safe inference
                     predictions = []
                     for idx, path in enumerate(batch_paths):
                         single_ext = extrinsics[idx:idx+1] if extrinsics is not None else None
                         single_int = intrinsics[idx:idx+1] if intrinsics is not None else None
-                        try:
-                            pred = model.inference(
-                                image=[str(path)], 
-                                process_res=504,
-                                extrinsics=single_ext,
-                                intrinsics=single_int,
-                                align_to_input_ext_scale=False
-                            )
-                        except Exception as single_error:
-                            # If individual processing also fails, fall back to no extrinsics
-                            error_str = str(single_error)
-                            if "Degenerate covariance rank" in error_str or "Umeyama alignment" in error_str:
-                                print(f"[DA3][WARN] Alignment failed for {path.name}, using without extrinsics.")
-                                pred = model.inference(
-                                    image=[str(path)], 
-                                    process_res=504,
-                                    extrinsics=None,
-                                    intrinsics=None
-                                )
-                            else:
-                                raise
+                        pred = _safe_inference(
+                            model,
+                            image_paths=[str(path)],
+                            extrinsics=single_ext,
+                            intrinsics=single_int,
+                            process_res=504
+                        )
                         predictions.append(pred)
                     
                     # Combine predictions into a single batch-like result
@@ -351,11 +375,13 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                         single_extrinsics = extrinsics[idx-1:idx]  # Keep batch dimension
                         single_intrinsics = intrinsics[idx-1:idx]
                     
-                    prediction = model.inference(
-                        image=[str(path)], 
-                        process_res=504,
+                    # Use safe inference with automatic fallback
+                    prediction = _safe_inference(
+                        model,
+                        image_paths=[str(path)],
                         extrinsics=single_extrinsics,
-                        intrinsics=single_intrinsics
+                        intrinsics=single_intrinsics,
+                        process_res=504
                     )
                     depth_abs = prediction.depth[0].astype(np.float32)
 
@@ -390,7 +416,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
 
 
 def main():
-    print("[DA3] VERSION: v3 (Configurable Model + Cam Encoder Check)")
+    print("[DA3] VERSION: v4 (Safe Inference + Pose Debug)")
     args = parse_arguments()
     t_total_start = time.perf_counter()
 
