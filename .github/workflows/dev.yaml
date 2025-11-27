@@ -2,7 +2,7 @@ name: da3 - dev
 
 on:
   push:
-    branches: [ devTrunk ]
+    branches: [ test ]
 
 permissions:
   id-token: write
