@@ -97,7 +97,7 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                     # --- CUSTOM INTRINSICS OVERRIDE (fallback) --------------------
                     sample_img = Image.open(path)
                     W, H = sample_img.size
-                    fx = fy = 1637.0
+                    fx = fy = 16.0
                     cx = W / 2.0
                     cy = H / 2.0
 
