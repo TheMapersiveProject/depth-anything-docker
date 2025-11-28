@@ -18,10 +18,10 @@ def parse_arguments():
 
 
 def _load_model(device: str):
-    """Load DA3METRIC-LARGE model."""
+    """Load DA3-LARGE model."""
     from depth_anything_3.api import DepthAnything3
-    #model = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE").to(device).eval()
-    model = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE").to(device).eval()
+    #model = DepthAnything3.from_pretrained("depth-anything/DA3-LARGE").to(device).eval()
+    model = DepthAnything3.from_pretrained("depth-anything/DA3-LARGE").to(device).eval()
     return model
 
 
@@ -179,7 +179,7 @@ def main():
     print(f"[DA3] Batch size: {batch_size}")
 
     # Load model
-    print(f"[DA3] Loading model: DA3METRIC-LARGE ...")
+    print(f"[DA3] Loading model: DA3-LARGE ...")
     t_load_start = time.perf_counter()
     model = _load_model(device)
     t_load = time.perf_counter() - t_load_start
