@@ -89,7 +89,7 @@ def main():
 
     # Use shared EFS data
     DATA_ROOT = Path(ENV["DATA_ROOT"])
-    undist_images = DATA_ROOT / tour_id / "undistorted" / "images"
+    undist_images = DATA_ROOT / tour_id / "images"
     print(f"[INFO] Using EFS-mounted data at {undist_images}")
 
     # AWS Batch array filtering
@@ -103,8 +103,8 @@ def main():
         die(f"No images found under {undist_images}")
 
     # Filter only this index's 6 perspective views
-    suffix = f"_{array_idx}.jpg_perspective_view_"
-    filtered_images = [p for p in all_images if suffix in p.name]
+    suffix = f"_{array_idx}.jpg"
+    filtered_images = [p for p in all_images if p.name.endswith(suffix)]
 
     if not filtered_images:
         print(f"[WARN] No images match this array index ({array_idx}) under {undist_images}. Exiting gracefully.")
@@ -135,16 +135,9 @@ def main():
         # ---- DA3 Inference ----
         subprocess.run(["python3", "da3_batch.py", "--data", tour_id, "--device", "cuda", "--batch", batch_size], 
                       check=True, env=ENV)
-
-        # ---- Stitch ----
-        subprocess.run(["python3", "stitch_depth_equirect_parallel.py", "--data", tour_id, "--preview"], 
-                      check=True, env=ENV)
-
         time.sleep(2)
 
         # ---- Upload results ----
-        print("[INFO] Uploading raw DA3 outputs...")
-        upload_dir_to_s3(dp_out_dir, f"{user_id}/reconstruction/{tour_id}/undistorted/undistort_depth_output", s3_bucket)
 
         print("[INFO] Uploading stitched outputs...")
         upload_dir_to_s3(stitch_out_dir, f"{user_id}/reconstruction/{tour_id}/depth_output", s3_bucket)
