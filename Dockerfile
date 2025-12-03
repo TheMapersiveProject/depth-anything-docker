@@ -22,6 +22,7 @@ COPY src/ /app/src/
 # Copy app scripts
 COPY da3_batch.py entrypoint_da3.py /app/
 COPY stitch_depth_equirect_parallel.py /app/
+COPY multiview_fuse_da3.py /app/
 
 # Install dependencies
 # Note: Installing torchvision separately to ensure it matches the torch version in the base image

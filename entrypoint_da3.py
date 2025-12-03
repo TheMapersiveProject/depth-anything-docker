@@ -141,6 +141,44 @@ def main():
 
         print("[INFO] Uploading stitched outputs...")
         upload_dir_to_s3(stitch_out_dir, f"{user_id}/reconstruction/{tour_id}/depth_output", s3_bucket)
+         # ---- MULTIVIEW FUSION ----
+        # Count number of original JPG images = array size
+        original_images = [p for p in undist_images.glob("*.jpg")]
+        expected_count = len(original_images)
+
+        # Count depth maps produced by DA3
+        depth_files = list(stitch_out_dir.glob("*_depth_meters.npz"))
+        depth_count = len(depth_files)
+
+        print(f"[INFO] Depth maps ready: {depth_count} / {expected_count}")
+
+        # Run fusion ONLY when ALL depth maps are present
+        if depth_count == expected_count:
+            print("[INFO] All depth maps generated → Running multiview fusion")
+
+            try:
+                subprocess.run(
+                    ["python3", "multiview_fuse_da3.py", tour_id],
+                    check=True,
+                    env=ENV
+                )
+            except subprocess.CalledProcessError as e:
+                die(f"[FUSION ERROR] {e}", code=e.returncode)
+
+            fused_dir = DATA_ROOT / tour_id / "multiview_fused"
+            if fused_dir.exists():
+                print("[INFO] Uploading multiview fusion results...")
+                upload_dir_to_s3(
+                    fused_dir,
+                    f"{user_id}/reconstruction/{tour_id}/multiview_fused",
+                    s3_bucket
+                )
+            else:
+                print("[WARN] Fusion output directory missing — skipping upload.")
+
+        else:
+            print("[INFO] Not all depth maps are ready yet — skipping fusion.")
+
 
         t1 = time.time()
         print(f"(MAPERSIVE) Job finished at {t1:.0f}, duration {t1 - t0:.2f}s")
