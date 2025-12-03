@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
+import sys
 import numpy as np
 from pathlib import Path
 from PIL import Image
 import open3d as o3d
 import cv2
 
-# ========================= CONFIG =========================
-DATASET_DIR = Path("/mnt/shared/data/576258")
+# ==========================================================
+# CONFIG
+# ==========================================================
+if len(sys.argv) < 2:
+    print("Usage: python multiview_fuse_da3.py <tour_id>")
+    sys.exit(1)
+
+tour_id = sys.argv[1]
+DATASET_DIR = Path("/mnt/shared/data") / tour_id
+# ==========================================================
 
 IMAGES_DIR  = DATASET_DIR / "images"
 DEPTH_DIR   = DATASET_DIR / "depth_output"
@@ -17,7 +26,8 @@ OUT_DEBUG_DIR = DATASET_DIR / "mv_debug_projections"
 
 STRIDE = 4
 MIN_DEPTH = 0.1
-MAX_DEPTH = 200.0
+MAX_DEPTH = 150.0
+
 # ==========================================================
 
 

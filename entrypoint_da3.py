@@ -156,8 +156,9 @@ def main():
         print(f"[INFO] Depth maps ready: {depth_count} / {expected_count}")
 
         # Run fusion ONLY when ALL depth maps are present
-        if depth_count == expected_count:
-            print("[INFO] All depth maps generated → Running multiview fusion")
+        # ---- MULTIVIEW FUSION ----
+        if depth_count == expected_count and array_idx == expected_count - 1:
+            print(f"[INFO] All depth maps ready and current index={array_idx} → Running multiview fusion")
 
             try:
                 subprocess.run(
