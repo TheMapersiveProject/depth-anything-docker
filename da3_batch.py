@@ -152,102 +152,39 @@ def _load_model(device: str):
     return model
 
 
-def _safe_inference(model, image_paths, extrinsics=None, intrinsics=None, process_res=1024):
-    """
-    Safely run model inference with fallback for alignment errors.
-    
-    For cubemap faces (rotation-only poses), the Umeyama alignment fails because
-    there's no translation baseline. This function catches that error and retries
-    without extrinsics as a fallback.
-    """
-    try:
-        return model.inference(
-            image=image_paths,
-            process_res=process_res,
-            extrinsics=extrinsics,
-            intrinsics=intrinsics,
-            align_to_input_ext_scale=False
-        )
-    except Exception as e:
-        error_str = str(e)
-        if "Degenerate covariance rank" in error_str or "Umeyama alignment" in error_str or "GeometryException" in error_str:
-            # Alignment failed - retry without extrinsics
-            # This loses camera conditioning but produces valid depth
-            print(f"[DA3][WARN] Pose alignment failed, retrying without extrinsics.")
-            return model.inference(
-                image=image_paths,
-                process_res=process_res,
-                extrinsics=None,
-                intrinsics=None
-            )
-        else:
-            # Different error - re-raise
-            raise
+def _safe_inference(model, image_paths, process_res=1024):
+    return model.inference(
+        image=image_paths,
+        process_res=process_res,
+        extrinsics=None,
+        intrinsics=None,
+        align_to_input_ext_scale=False
+    )
+
 
 
 def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir: Path, *, 
                             per_image_progress_start: int, total_images: int, rot_trans_dir: Path):
     """Process one batch and save outputs. Returns (completed_count, error_count, per_image_times)."""
+
     t_batch_start = time.perf_counter()
     completed = 0
     errors = 0
     per_image_times = []
 
-    # Try to load poses
-    extrinsics, intrinsics = _load_pose_matrices(batch_paths, rot_trans_dir)
-    if extrinsics is not None:
-        # Ensure model has camera encoder support
-        if not _has_camera_encoder(model):
-            print("[DA3][WARN] Model has no camera encoder; ignoring extrinsics/intrinsics.")
-            extrinsics = None
-            intrinsics = None
-        else:
-            print(f"[DA3][DEBUG] Extrinsics shape: {extrinsics.shape}, Intrinsics shape: {intrinsics.shape}")
-    else:
-        print("[DA3][WARN] Running without pose info (could not load matrices).")
+    # No extrinsics or intrinsics
+    print("[DA3] Running in single-image mode (no extrinsics, no intrinsics).")
 
     try:
-        # Run inference with safe fallback for alignment errors
         with torch.no_grad():
-            try:
-                prediction = _safe_inference(
-                    model,
-                    image_paths=[str(p) for p in batch_paths],
-                    extrinsics=extrinsics,
-                    intrinsics=intrinsics,
-                    process_res=1024
-                )
-            except Exception as align_error:
-                # Check if it's the Umeyama alignment error
-                error_str = str(align_error)
-                if "Degenerate covariance rank" in error_str or "Umeyama alignment" in error_str or "GeometryException" in error_str:
-                    print(f"[DA3][WARN] Pose alignment failed for batch. Processing images individually.")
-
-                    # Process each image individually with safe inference
-                    predictions = []
-                    for idx, path in enumerate(batch_paths):
-                        single_ext = extrinsics[idx:idx+1] if extrinsics is not None else None
-                        single_int = intrinsics[idx:idx+1] if intrinsics is not None else None
-                        pred = _safe_inference(
-                            model,
-                            image_paths=[str(path)],
-                            extrinsics=single_ext,
-                            intrinsics=single_int,
-                            process_res=1024
-                        )
-                        predictions.append(pred)
-                    
-                    # Combine predictions into a single batch-like result
-                    # Create a mock prediction object with combined depths
-                    from types import SimpleNamespace
-                    combined_depths = np.stack([p.depth[0] for p in predictions])
-                    prediction = SimpleNamespace()
-                    prediction.depth = combined_depths
-                else:
-                    # Re-raise if it's a different error
-                    raise
-        
-        # Save results for each image
+            prediction = model.inference(
+                image=[str(p) for p in batch_paths],
+                process_res=1024,
+                extrinsics=None,
+                intrinsics=None,
+                align_to_input_ext_scale=False
+            )
+        # Save per-image results
         for idx, (path, depth) in enumerate(zip(batch_paths, prediction.depth), start=1):
             depth_abs = depth.astype(np.float32)
             stem = path.stem
@@ -256,76 +193,26 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
 
             np.savez_compressed(npz_path, depth=depth_abs)
 
-            # Visualization
             d = depth_abs
             d_norm = (d - d.min()) / max(1e-8, (d.max() - d.min()))
             Image.fromarray((d_norm * 255).astype("uint8")).save(png_path)
 
             done_idx = per_image_progress_start + idx - 1
-            print(f"[{done_idx}/{total_images}] {path.name} → {npz_path.name}, {png_path.name}")
+            print(f"[{done_idx}/{total_images}] {path.name} → {npz_path.name}")
+
             completed += 1
 
+        # Timing
         t_batch = time.perf_counter() - t_batch_start
         if completed > 0:
             per_image_times.extend([t_batch / completed] * completed)
 
-    except RuntimeError as re:
-        # OOM fallback: try one-by-one
-        if "out of memory" in str(re).lower() and len(batch_paths) > 1 and device == "cuda":
-            print(f"[DA3][WARN] OOM on batch starting {batch_paths[0].name}. Falling back to single-image processing.")
-            try:
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
-
-            for idx, path in enumerate(batch_paths, start=1):
-                try:
-                    t_img_start = time.perf_counter()
-                    # For single image, extract corresponding extrinsics/intrinsics if available
-                    single_extrinsics = None
-                    single_intrinsics = None
-                    if extrinsics is not None and intrinsics is not None:
-                        single_extrinsics = extrinsics[idx-1:idx]  # Keep batch dimension
-                        single_intrinsics = intrinsics[idx-1:idx]
-                    
-                    # Use safe inference with automatic fallback
-                    prediction = _safe_inference(
-                        model,
-                        image_paths=[str(path)],
-                        extrinsics=single_extrinsics,
-                        intrinsics=single_intrinsics,
-                        process_res=1024
-                    )
-                    depth_abs = prediction.depth[0].astype(np.float32)
-
-                    stem = path.stem
-                    npz_path = out_dir / f"{stem}_depth_meters.npz"
-                    png_path = out_dir / f"{stem}_depth_vis.png"
-                    np.savez_compressed(npz_path, depth=depth_abs)
-
-                    d = depth_abs
-                    d_norm = (d - d.min()) / max(1e-8, (d.max() - d.min()))
-                    Image.fromarray((d_norm * 255).astype("uint8")).save(png_path)
-
-                    done_idx = per_image_progress_start + idx - 1
-                    t_img = time.perf_counter() - t_img_start
-                    print(f"[{done_idx}/{total_images}] {path.name} → {npz_path.name}, {png_path.name} [TIME {t_img:.2f}s]")
-                    per_image_times.append(t_img)
-                    completed += 1
-
-                except Exception as e1:
-                    errors += 1
-                    print(f"[DA3][ERROR] {path.name}: {e1}")
-        else:
-            errors += len(batch_paths)
-            print(f"[DA3][ERROR] Batch starting {batch_paths[0].name}: {re}")
     except Exception as e:
-        import traceback
+        print(f"[DA3][ERROR] Batch failed: {e}")
         errors += len(batch_paths)
-        print(f"[DA3][ERROR] Batch starting {batch_paths[0].name}: {e}")
-        print("[DA3][TRACE]", traceback.format_exc())
 
     return completed, errors, per_image_times
+
 
 
 def main():
