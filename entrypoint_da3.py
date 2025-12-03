@@ -141,6 +141,9 @@ def main():
 
         print("[INFO] Uploading stitched outputs...")
         upload_dir_to_s3(stitch_out_dir, f"{user_id}/reconstruction/{tour_id}/depth_output", s3_bucket)
+        # wait for other array jobs to finish writing
+        print("[INFO] Waiting 30s before fusion to allow other jobs to complete...")
+        time.sleep(30)
          # ---- MULTIVIEW FUSION ----
         # Count number of original JPG images = array size
         original_images = [p for p in undist_images.glob("*.jpg")]
