@@ -110,7 +110,7 @@ def main():
     all_faces = sorted(CUBE_IMG_DIR.glob("*.jpg"))
     import re
     base_ids = sorted(set(
-        re.sub(r"_\d+\.jpg$", "", p.name.split(".jpg_perspective_view_")[0])
+        re.sub(r"(_\d+)?\.jpg$", "", p.name.split(".jpg_perspective_view_")[0])
         for p in all_faces
     ))
 
