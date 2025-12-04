@@ -6,7 +6,7 @@ import time
 import numpy as np
 import torch
 from PIL import Image
-
+import cv2
 def parse_arguments():
     p = argparse.ArgumentParser(description="Run DA3 on undistorted images for an OpenSfM dataset.")
     p.add_argument("--data", required=True, help="Dataset name (e.g., 410704)")
@@ -185,8 +185,13 @@ def _process_and_save_batch(model, device: str, batch_paths: list[Path], out_dir
                 align_to_input_ext_scale=False
             )
         # Save per-image results
-        for idx, (path, depth) in enumerate(zip(batch_paths, prediction.depth), start=1):
-            depth_abs = depth.astype(np.float32)
+        for idx, (path, depth) in enumerate(zip(batch_paths, prediction.depth), start=1):  
+            depth_abs = depth.astype(np.float32) 
+            # resize depth to match the original image
+            with Image.open(path) as img:
+                W, H = img.size
+            depth_abs = cv2.resize(depth_abs, (W, H), interpolation=cv2.INTER_NEAREST)
+            
             stem = path.stem
             npz_path = out_dir / f"{stem}_depth_meters.npz"
             png_path = out_dir / f"{stem}_depth_vis.png"

@@ -51,6 +51,8 @@ def upload_dir_to_s3(local_dir: Path, s3_prefix: str, bucket: str):
                 continue
             rel_path = path.relative_to(local_dir)
             key = f"{s3_prefix}/{rel_path}".replace("\\", "/")
+            # 🔍 Add this debug print
+            print(f"[DEBUG] Ready to upload {path} to s3://{bucket}/{key}")
             try:
                 s3.upload_file(str(path), bucket, key, Config=config)
                 print(f"[UPLOAD] {path} -> s3://{bucket}/{key}")
@@ -125,6 +127,10 @@ def main():
 
     dp_out_dir = DATA_ROOT / tour_id / "undistorted" / "undistort_depth_output"
     stitch_out_dir = DATA_ROOT / tour_id / "depth_output"
+    OUT_DIR = DATA_ROOT / tour_id / "multiview_fused"
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUT_PLY = OUT_DIR / "da3_multiview_fused_enu.ply"
+    OUT_DEBUG_DIR = OUT_DIR / "mv_debug_projections"
     dp_out_dir.mkdir(parents=True, exist_ok=True)
     stitch_out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -157,6 +163,10 @@ def main():
 
         # Run fusion ONLY when ALL depth maps are present
         # ---- MULTIVIEW FUSION ----
+        print("[DEBUG] Listing available depth files before fusion:")
+        for p in stitch_out_dir.glob("*_depth_meters.npz"):
+            print("   ", p.name)
+
         if depth_count == expected_count and array_idx == expected_count - 1:
             print(f"[INFO] All depth maps ready and current index={array_idx} → Running multiview fusion")
 
@@ -169,9 +179,10 @@ def main():
             except subprocess.CalledProcessError as e:
                 die(f"[FUSION ERROR] {e}", code=e.returncode)
 
-            fused_dir = DATA_ROOT / tour_id / "multiview_fused"
+            fused_dir = DATA_ROOT / tour_id 
             if fused_dir.exists():
-                print("[INFO] Uploading multiview fusion results...")
+                print("[INFO] Uploading multiview fusion results (no index filter)...")
+                os.environ.pop("AWS_BATCH_JOB_ARRAY_INDEX", None)  # disable filter
                 upload_dir_to_s3(
                     fused_dir,
                     f"{user_id}/reconstruction/{tour_id}/multiview_fused",
