@@ -21,8 +21,9 @@ if not (DATASET_DIR / "undistorted").exists():
     DATASET_DIR = DATASET_DIR.parent / tour_id
     print(f"[INFO] Adjusted DATASET_DIR → {DATASET_DIR}")
 
-CUBE_IMG_DIR = DATASET_DIR / "undistorted" / "images"
-CUBE_DEPTH_DIR = DATASET_DIR / "undistorted" / "undistort_depth_output"
+#CUBE_IMG_DIR = DATASET_DIR / "undistorted" / "images"
+CUBE_IMG_DIR = DATASET_DIR / "undistorted" / "undistort_depth_output"
+CUBE_DEPTH_DIR = CUBE_IMG_DIR
 
 POSE_DIR = DATASET_DIR / "rot_trans_matrix_npy"
 if not POSE_DIR.exists():
@@ -121,11 +122,16 @@ def main():
             continue
 
         for face in FACES:
-            face_pattern = f"{base_id}.jpg_perspective_view_{face}.jpg"
-            img_path = CUBE_IMG_DIR / face_pattern
-            import re
+            # Look for the colorized depth visualization as a substitute for the RGB cube face
+            img_path_candidates = list(CUBE_IMG_DIR.glob(f"{base_id}*.jpg_perspective_view_{face}_depth_vis.png"))
+            if not img_path_candidates:
+                print(f"[WARN] No _depth_vis.png found for {base_id} face={face}")
+                continue
+            img_path = img_path_candidates[0]
+            # Find the corresponding depth map
             depth_candidates = list(CUBE_DEPTH_DIR.glob(f"{base_id}*.jpg_perspective_view_{face}_depth_meters.npz"))
             if not depth_candidates:
+                print(f"[WARN] No depth_meters.npz found for {base_id} face={face}")
                 continue
             depth_path = depth_candidates[0]
 
