@@ -107,7 +107,11 @@ def main():
     # 1️⃣ Fuse cube faces (existing behavior)
     pts_all, cols_all = [], []
     all_faces = sorted(CUBE_IMG_DIR.glob("*.jpg"))
-    base_ids = sorted(set(p.name.split(".jpg_perspective_view_")[0] for p in all_faces))
+    import re
+    base_ids = sorted(set(
+        re.sub(r"_\d+\.jpg$", "", p.name.split(".jpg_perspective_view_")[0])
+        for p in all_faces
+    ))
 
     for base_id in base_ids:
         try:
@@ -119,7 +123,12 @@ def main():
         for face in FACES:
             face_pattern = f"{base_id}.jpg_perspective_view_{face}.jpg"
             img_path = CUBE_IMG_DIR / face_pattern
-            depth_path = CUBE_DEPTH_DIR / f"{face_pattern}_depth_meters.npz"
+            import re
+            depth_candidates = list(CUBE_DEPTH_DIR.glob(f"{base_id}*.jpg_perspective_view_{face}_depth_meters.npz"))
+            if not depth_candidates:
+                continue
+            depth_path = depth_candidates[0]
+
             if not img_path.exists() or not depth_path.exists():
                 continue
             pts, cols = backproject_cube_face(img_path, depth_path, R_global, C_global, face)
