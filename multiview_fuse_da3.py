@@ -15,9 +15,18 @@ if len(sys.argv) < 2:
 
 tour_id = sys.argv[1]
 DATASET_DIR = Path("/mnt/shared/data") / tour_id
+
+# --- Auto-fix if running inside /multiview_fused ---
+if not (DATASET_DIR / "undistorted").exists():
+    DATASET_DIR = DATASET_DIR.parent / tour_id
+    print(f"[INFO] Adjusted DATASET_DIR → {DATASET_DIR}")
+
 CUBE_IMG_DIR = DATASET_DIR / "undistorted" / "images"
 CUBE_DEPTH_DIR = DATASET_DIR / "undistorted" / "undistort_depth_output"
+
 POSE_DIR = DATASET_DIR / "rot_trans_matrix_npy"
+if not POSE_DIR.exists():
+    POSE_DIR = DATASET_DIR.parent / "rot_trans_matrix_npy"
 
 OUT_PLY = DATASET_DIR / "multiview_fused" / "da3_multiview_fused_enu.ply"
 MERGED_PLY = DATASET_DIR / "undistorted" / "depthmaps" / "merged.ply"
