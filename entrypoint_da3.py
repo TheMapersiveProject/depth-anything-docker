@@ -141,15 +141,25 @@ def main():
         # ---- DA3 Inference ----
         subprocess.run(["python3", "da3_batch.py", "--data", tour_id, "--device", "cuda", "--batch", batch_size], 
                       check=True, env=ENV)
+        
+        # ---- Stitch ----
+        subprocess.run(["python3", "stitch_depth_equirect_parallel.py", "--data", tour_id, "--preview"], 
+                      check=True, env=ENV)
+
         time.sleep(2)
 
         # ---- Upload results ----
+        print("[INFO] Uploading raw DA3 outputs...")
+        upload_dir_to_s3(dp_out_dir, f"{user_id}/reconstruction/{tour_id}/undistorted/undistort_depth_output", s3_bucket)
 
         print("[INFO] Uploading stitched outputs...")
         upload_dir_to_s3(stitch_out_dir, f"{user_id}/reconstruction/{tour_id}/depth_output", s3_bucket)
+
         # wait for other array jobs to finish writing
         print("[INFO] Waiting 30s before fusion to allow other jobs to complete...")
         time.sleep(30)
+
+
          # ---- MULTIVIEW FUSION ----
         # Count number of original JPG images = array size
         original_images = [p for p in undist_images.glob("*.jpg")]
@@ -179,7 +189,7 @@ def main():
             except subprocess.CalledProcessError as e:
                 die(f"[FUSION ERROR] {e}", code=e.returncode)
 
-            fused_dir = DATA_ROOT / tour_id 
+            fused_dir = DATA_ROOT / tour_id / "multiview_fused"
             if fused_dir.exists():
                 print("[INFO] Uploading multiview fusion results (no index filter)...")
                 os.environ.pop("AWS_BATCH_JOB_ARRAY_INDEX", None)  # disable filter
