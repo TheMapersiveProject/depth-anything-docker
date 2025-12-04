@@ -17,9 +17,9 @@ tour_id = sys.argv[1]
 DATASET_DIR = Path("/mnt/shared/data") / tour_id
 CUBE_IMG_DIR = DATASET_DIR / "undistorted" / "images"
 CUBE_DEPTH_DIR = DATASET_DIR / "undistorted" / "undistort_depth_output"
-POSE_DIR = DATASET_DIR /"multiview_fused" / "rot_trans_matrix_npy"
+POSE_DIR = DATASET_DIR / "rot_trans_matrix_npy"
 
-OUT_PLY = DATASET_DIR / "da3_multiview_fused_enu.ply"
+OUT_PLY = DATASET_DIR / "multiview_fused" / "da3_multiview_fused_enu.ply"
 MERGED_PLY = DATASET_DIR / "undistorted" / "depthmaps" / "merged.ply"
 OUT_DEBUG_DIR = DATASET_DIR / "multiview_fused" / "mv_debug_projections"
 
@@ -136,7 +136,7 @@ def main():
     # ======================================================
     # DEBUG: Project fused PCD back into each image
     # ======================================================
-    
+
     print("[MV] Creating debug projections with merged.ply comparison...")
     gen_cloud = o3d.io.read_point_cloud(str(OUT_PLY))
     merged_cloud = None

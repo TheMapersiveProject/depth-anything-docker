@@ -52,7 +52,7 @@ def upload_dir_to_s3(local_dir: Path, s3_prefix: str, bucket: str):
             rel_path = path.relative_to(local_dir)
             key = f"{s3_prefix}/{rel_path}".replace("\\", "/")
             # 🔍 Add this debug print
-            print(f"[DEBUG] Ready to upload {path} to s3://{bucket}/{key}")
+            #print(f"[DEBUG] Ready to upload {path} to s3://{bucket}/{key}")
             try:
                 s3.upload_file(str(path), bucket, key, Config=config)
                 print(f"[UPLOAD] {path} -> s3://{bucket}/{key}")
