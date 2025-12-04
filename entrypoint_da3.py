@@ -165,19 +165,25 @@ def main():
         original_images = [p for p in undist_images.glob("*.jpg")]
         expected_count = len(original_images)
 
-        # Count depth maps produced by DA3
-        depth_files = list(stitch_out_dir.glob("*_depth_meters.npz"))
-        depth_count = len(depth_files)
+        #  Count cube-face depth maps instead of stitched equirectangular ones
+        cube_depth_dir = DATA_ROOT / tour_id / "undistorted" / "undistort_depth_output"
+        cube_depth_files = list(cube_depth_dir.glob("*_depth_meters.npz"))
+        depth_count = len(cube_depth_files)
 
-        print(f"[INFO] Depth maps ready: {depth_count} / {expected_count}")
+        # Number of expected cube-face maps = 6 × number of base images
+        expected_cube_faces = expected_count * 6
+
+        print(f"[INFO] Cube-face depth maps ready: {depth_count} / {expected_cube_faces}")
 
         # Run fusion ONLY when ALL depth maps are present
         # ---- MULTIVIEW FUSION ----
         print("[DEBUG] Listing available depth files before fusion:")
-        for p in stitch_out_dir.glob("*_depth_meters.npz"):
+        for p in cube_depth_dir.glob("*_depth_meters.npz"):
             print("   ", p.name)
 
-        if depth_count == expected_count and array_idx == expected_count - 1:
+        
+        if depth_count >= expected_cube_faces and array_idx == expected_count - 1:
+
             print(f"[INFO] All depth maps ready and current index={array_idx} → Running multiview fusion")
 
             try:
