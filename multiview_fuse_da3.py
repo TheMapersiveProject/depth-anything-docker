@@ -127,11 +127,12 @@ def main():
     OUT_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
     pts_all, cols_all = [], []
-    all_faces = sorted(CUBE_IMG_DIR.glob("*.jpg"))
+    all_faces = sorted(CUBE_IMG_DIR.glob("*_depth_vis.png"))
     import re
     base_ids = sorted(set(
-        re.sub(r"(_\d+)?\.jpg$", "", p.name.split(".jpg_perspective_view_")[0])
+        re.match(r"(.+?)_\d+\.jpg_perspective_view_([a-z]+)_depth_vis\.png", p.name).group(1)
         for p in all_faces
+        if re.match(r"(.+?)_\d+\.jpg_perspective_view_([a-z]+)_depth_vis\.png", p.name)
     ))
 
     print(f"[LOG] Found base_ids = {len(base_ids)}")   # LOG
@@ -148,13 +149,14 @@ def main():
         for face in FACES:
             print(f"[LOG] Checking face={face}")  # LOG
 
-            img_path_candidates = list(CUBE_IMG_DIR.glob(f"{base_id}*.jpg_perspective_view_{face}_depth_vis.png"))
+            img_path_candidates = list(CUBE_IMG_DIR.glob(f"{base_id}_*.jpg_perspective_view_{face}_depth_vis.png"))
+
+
             if not img_path_candidates:
                 print(f"[WARN] No _depth_vis.png for {base_id} face={face}")
                 continue
             img_path = img_path_candidates[0]
-
-            depth_candidates = list(CUBE_DEPTH_DIR.glob(f"{base_id}*.jpg_perspective_view_{face}_depth_meters.npz"))
+            depth_candidates = list(CUBE_DEPTH_DIR.glob(f"{base_id}_*.jpg_perspective_view_{face}_depth_meters.npz"))
             if not depth_candidates:
                 print(f"[WARN] No depth_meters.npz for {base_id} face={face}")
                 continue
@@ -203,10 +205,14 @@ def main():
     for base_id in base_ids:
         R_global, C_global = load_pose(base_id)
         for face in FACES:
-            face_pattern = f"{base_id}.jpg_perspective_view_{face}.jpg"
-            img_path = CUBE_IMG_DIR / face_pattern
-            if not img_path.exists():
+            img_candidates = list(CUBE_IMG_DIR.glob(
+                f"{base_id}_*.jpg_perspective_view_{face}_depth_vis.png"
+            ))
+            if not img_candidates:
                 continue
+            
+            img_path = img_candidates[0]
+
             img = cv2.imread(str(img_path))
             if img is None:
                 print(f"[WARN] Failed to load image for debug overlay: {img_path}")  # LOG
