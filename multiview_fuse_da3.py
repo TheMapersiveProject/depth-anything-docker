@@ -21,8 +21,8 @@ if not (DATASET_DIR / "undistorted").exists():
     DATASET_DIR = DATASET_DIR.parent / tour_id
     print(f"[INFO] Adjusted DATASET_DIR → {DATASET_DIR}")
 
-CUBE_IMG_DIR = DATASET_DIR / "undistorted" / "undistort_depth_output"
-CUBE_DEPTH_DIR = CUBE_IMG_DIR
+CUBE_IMG_DIR = DATASET_DIR / "images"  # Using the folder defined by the user
+CUBE_DEPTH_DIR = DATASET_DIR / "undistorted" / "undistort_depth_output" # Assuming depth maps are in the same folder
 
 POSE_DIR = DATASET_DIR / "rot_trans_matrix_npy"
 if not POSE_DIR.exists():
@@ -47,8 +47,8 @@ FACES = ["front", "back", "left", "right", "top", "bottom"]
 def get_face_rotation(face_name):
     if face_name == 'front':   return np.eye(3)
     if face_name == 'back':    return np.array([[-1,0,0],[0,1,0],[0,0,-1]])
-    if face_name == 'right':   return np.array([[0,0,1],[0,1,0],[-1,0,0]])
-    if face_name == 'left':    return np.array([[0,0,-1],[0,1,0],[1,0,0]])
+    if face_name == 'left':    return np.array([[0,0,1],[0,1,0],[-1,0,0]])
+    if face_name == 'right':   return np.array([[0,0,-1],[0,1,0],[1,0,0]])
     if face_name == 'top':     return np.array([[1,0,0],[0,0,1],[0,-1,0]])
     if face_name == 'bottom':  return np.array([[1,0,0],[0,0,-1],[0,1,0]])
     raise ValueError(f"Unknown face: {face_name}")
@@ -67,14 +67,17 @@ def backproject_cube_face(img_path, depth_path, R_global, C_global, face_name):
     img = Image.open(img_path).convert("RGB")
     img_np = np.array(img)
     H, W = img_np.shape[:2]
-    print(f"[LOG] Image shape: {img_np.shape}")     # LOG
+    print(f"[LOG] Image shape: {img_np.shape}")    # LOG
 
     depth = np.load(depth_path)["depth"].astype(np.float32)
-    print(f"[LOG] Depth shape: {depth.shape}")      # LOG
+    print(f"[LOG] Depth shape: {depth.shape}")     # LOG
 
+    # --- FIX 2: Resize depth if mismatch ---
     if depth.shape != (H, W):
-        print("[WARN] Depth resolution mismatch")   # LOG
-        return np.zeros((0,3)), np.zeros((0,3))
+        print(f"[WARN] Depth resolution mismatch: Resizing {depth.shape} to {(H, W)}")
+        # Resize depth map using nearest neighbor interpolation (W, H order for cv2 size)
+        depth = cv2.resize(depth, (W, H), interpolation=cv2.INTER_NEAREST)
+    # ---------------------------------------
 
     u = np.arange(0, W, STRIDE)
     v = np.arange(0, H, STRIDE)
@@ -127,23 +130,26 @@ def main():
     OUT_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
     pts_all, cols_all = [], []
-    all_faces = sorted(CUBE_IMG_DIR.glob("*_depth_vis.png"))
+    # --- CHANGE 1A: Update glob pattern to match new image files (.jpg) ---
+    all_faces = sorted(CUBE_IMG_DIR.glob("*.jpg_perspective_view_*.jpg"))
+    # ----------------------------------------------------------------------
+    
     import re
-    # FIX: Simple split. Everything before ".jpg_perspective..." is the ID.
-    # This keeps the "_4" so the pose loader can find the right file.
+    # --- CHANGE 1B: Update base_id extraction logic to split at the first '.jpg' ---
+    # This ensures base_id = UUID_X
     base_ids = sorted(set(
-        p.name.split(".jpg_perspective_view_")[0]
+        p.name.split(".jpg")[0]
         for p in all_faces
-        if ".jpg_perspective_view_" in p.name
+        if len(p.name.split(".jpg")[0].split('_')) > 1 and ".jpg_perspective_view_" in p.name
     ))
 
-    print(f"[LOG] Found base_ids = {len(base_ids)}")   # LOG
+    print(f"[LOG] Found base_ids = {len(base_ids)}")    # LOG
 
     for base_id in base_ids:
         print(f"\n[LOG] Processing base_id={base_id}")  # LOG
         try:
             R_global, C_global = load_pose(base_id)
-            print(f"[LOG] Loaded pose for {base_id}")   # LOG
+            print(f"[LOG] Loaded pose for {base_id}")    # LOG
         except Exception as e:
             print(f"[WARN] Missing pose for {base_id}: {e}")
             continue
@@ -151,14 +157,17 @@ def main():
         for face in FACES:
             print(f"[LOG] Checking face={face}")  # LOG
 
-            img_path_candidates = list(CUBE_IMG_DIR.glob(f"{base_id}.jpg_perspective_view_{face}_depth_vis.png"))
-
+            # --- CHANGE 1C: Update image file lookup pattern to match new format ---
+            img_path_candidates = list(CUBE_IMG_DIR.glob(f"{base_id}.jpg_perspective_view_{face}.jpg"))
 
             if not img_path_candidates:
-                print(f"[WARN] No _depth_vis.png for {base_id} face={face}")
+                print(f"[WARN] No image .jpg for {base_id} face={face}")
                 continue
             img_path = img_path_candidates[0]
+            
+            # The depth map still uses the _depth_meters.npz suffix
             depth_candidates = list(CUBE_DEPTH_DIR.glob(f"{base_id}.jpg_perspective_view_{face}_depth_meters.npz"))
+            
             if not depth_candidates:
                 print(f"[WARN] No depth_meters.npz for {base_id} face={face}")
                 continue
@@ -195,7 +204,12 @@ def main():
     # ======================================================
 
     print("[MV] Creating debug projections...")
-    gen_cloud = o3d.io.read_point_cloud(str(OUT_PLY))
+    # NOTE: Reading from OUT_PLY is safer than using pts_all directly if the main fusion fails
+    try:
+        gen_cloud = o3d.io.read_point_cloud(str(OUT_PLY))
+    except Exception as e:
+        print(f"[WARN] Could not load {OUT_PLY} for debug projection: {e}")
+        return
 
     merged_cloud = None
     if MERGED_PLY.exists():
@@ -205,16 +219,24 @@ def main():
         print("[WARN] Reference merged.ply not found, skipping overlay.")
 
     for base_id in base_ids:
-        R_global, C_global = load_pose(base_id)
+        # Load pose again for debug (handle possible errors during iteration)
+        try:
+            R_global, C_global = load_pose(base_id)
+        except Exception:
+             continue # Skip debug if pose fails
+
         for face in FACES:
+            # --- CHANGE 1D: Update debug image lookup pattern to match new format ---
             img_candidates = list(CUBE_IMG_DIR.glob(
-                f"{base_id}.jpg_perspective_view_{face}_depth_vis.png"
+                f"{base_id}.jpg_perspective_view_{face}.jpg"
             ))
+            # ------------------------------------------------------------------------
             if not img_candidates:
                 continue
             
             img_path = img_candidates[0]
 
+            # Use cv2.imread here as we did previously
             img = cv2.imread(str(img_path))
             if img is None:
                 print(f"[WARN] Failed to load image for debug overlay: {img_path}")  # LOG
@@ -225,11 +247,18 @@ def main():
 
             u, v = project_world_to_face(np.asarray(gen_cloud.points), R_global, C_global, face, H, W)
             print(f"[LOG] Debug proj (generated) pts={len(u)}")  # LOG
+            
+            # Ensure indices are within bounds before writing
+            v = np.clip(v, 0, H - 1)
+            u = np.clip(u, 0, W - 1)
             vis[v, u] = (0, 0, 255)
 
             if merged_cloud is not None:
                 um, vm = project_world_to_face(np.asarray(merged_cloud.points), R_global, C_global, face, H, W)
                 print(f"[LOG] Debug proj (merged) pts={len(um)}")  # LOG
+                
+                vm = np.clip(vm, 0, H - 1)
+                um = np.clip(um, 0, W - 1)
                 vis[vm, um] = (0, 255, 0)
 
             out_path = OUT_DEBUG_DIR / f"{base_id}_{face}_overlay.png"
