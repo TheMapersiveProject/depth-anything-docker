@@ -49,8 +49,8 @@ def get_face_rotation(face_name):
     if face_name == 'back':    return np.array([[-1,0,0],[0,1,0],[0,0,-1]])
     if face_name == 'left':    return np.array([[0,0,1],[0,1,0],[-1,0,0]])
     if face_name == 'right':   return np.array([[0,0,-1],[0,1,0],[1,0,0]])
-    if face_name == 'top':     return np.array([[1,0,0],[0,0,1],[0,-1,0]])
-    if face_name == 'bottom':  return np.array([[1,0,0],[0,0,-1],[0,1,0]])
+    if face_name == 'bottom':     return np.array([[1,0,0],[0,0,1],[0,-1,0]])
+    if face_name == 'top':  return np.array([[1,0,0],[0,0,-1],[0,1,0]])
     raise ValueError(f"Unknown face: {face_name}")
 
 def load_pose(base_id):
