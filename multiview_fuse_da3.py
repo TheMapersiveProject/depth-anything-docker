@@ -151,14 +151,14 @@ def main():
         for face in FACES:
             print(f"[LOG] Checking face={face}")  # LOG
 
-            img_path_candidates = list(CUBE_IMG_DIR.glob(f"{base_id}_*.jpg_perspective_view_{face}_depth_vis.png"))
+            img_path_candidates = list(CUBE_IMG_DIR.glob(f"{base_id}.jpg_perspective_view_{face}_depth_vis.png"))
 
 
             if not img_path_candidates:
                 print(f"[WARN] No _depth_vis.png for {base_id} face={face}")
                 continue
             img_path = img_path_candidates[0]
-            depth_candidates = list(CUBE_DEPTH_DIR.glob(f"{base_id}_*.jpg_perspective_view_{face}_depth_meters.npz"))
+            depth_candidates = list(CUBE_DEPTH_DIR.glob(f"{base_id}.jpg_perspective_view_{face}_depth_meters.npz"))
             if not depth_candidates:
                 print(f"[WARN] No depth_meters.npz for {base_id} face={face}")
                 continue
@@ -208,7 +208,7 @@ def main():
         R_global, C_global = load_pose(base_id)
         for face in FACES:
             img_candidates = list(CUBE_IMG_DIR.glob(
-                f"{base_id}_*.jpg_perspective_view_{face}_depth_vis.png"
+                f"{base_id}.jpg_perspective_view_{face}_depth_vis.png"
             ))
             if not img_candidates:
                 continue
