@@ -21,7 +21,7 @@ if not (DATASET_DIR / "undistorted").exists():
     DATASET_DIR = DATASET_DIR.parent / tour_id
     print(f"[INFO] Adjusted DATASET_DIR → {DATASET_DIR}")
 
-CUBE_IMG_DIR = DATASET_DIR / "images"  # Using the folder defined by the user
+CUBE_IMG_DIR = DATASET_DIR / "undistorted"/ "images"  # Using the folder defined by the user
 CUBE_DEPTH_DIR = DATASET_DIR / "undistorted" / "undistort_depth_output" # Assuming depth maps are in the same folder
 
 POSE_DIR = DATASET_DIR / "rot_trans_matrix_npy"
