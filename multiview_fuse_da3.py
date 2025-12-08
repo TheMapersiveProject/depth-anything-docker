@@ -129,10 +129,12 @@ def main():
     pts_all, cols_all = [], []
     all_faces = sorted(CUBE_IMG_DIR.glob("*_depth_vis.png"))
     import re
+    # FIX: Simple split. Everything before ".jpg_perspective..." is the ID.
+    # This keeps the "_4" so the pose loader can find the right file.
     base_ids = sorted(set(
-        re.match(r"(.+?)_\d+\.jpg_perspective_view_([a-z]+)_depth_vis\.png", p.name).group(1)
+        p.name.split(".jpg_perspective_view_")[0]
         for p in all_faces
-        if re.match(r"(.+?)_\d+\.jpg_perspective_view_([a-z]+)_depth_vis\.png", p.name)
+        if ".jpg_perspective_view_" in p.name
     ))
 
     print(f"[LOG] Found base_ids = {len(base_ids)}")   # LOG
